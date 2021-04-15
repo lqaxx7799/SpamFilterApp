@@ -1,0 +1,39 @@
+﻿
+@{
+    ViewData["Title"] = "Test";
+}
+
+<h1>Test</h1>
+
+Insert message:
+<input class="form-control" name="txtMessage" id="txtMessage" />
+
+<button class="btn btn-primary" id="btnTest">
+    Test
+</button>
+
+<div id="result">
+
+</div>
+
+@section scripts{
+    <script>
+        $('#btnTest').click(function () {
+            $('#result').text('');
+            fetch('/Home/TestSpam', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json; charset=utf-8'
+                },
+                body: JSON.stringify($('#txtMessage').val())
+            })
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    $.each(data.result, (value, key) => {
+                        $('#result').append(`<div>${value}: ${key}</div>`);
+                    });
+                });
+        });
+    </script>
+}

@@ -1,0 +1,27 @@
+﻿.gmail-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gmail-body{
+    margin-top: 20px;
+}
+
+.avatar-holder {
+    width: 100px;
+    height: 100px;
+}
+
+.table-col-action > button{
+    margin-right: 3px;
+}
+
+ul.nav.nav-tabs > li {
+    padding: 15px;
+}
+
+.tab-content {
+    margin-top: 20px;
+}

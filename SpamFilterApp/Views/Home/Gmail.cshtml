@@ -1,0 +1,413 @@
+﻿
+@{
+    ViewData["Title"] = "Gmail";
+}
+
+<h1>Spam Filter</h1>
+
+<div id="logInScreen">
+    <button class="btn btn-primary" id="btnLogIn">Log in with Gmail</button>
+</div>
+
+<div id="mainScreen">
+    <a href="#" id="logoutText" target='myIFrame' onclick="myIFrame.location='https://www.google.com/accounts/Logout'; startLogoutPolling();return false;"> Click here to logout </a>
+    <div class="gmail-header">
+        <div id='uName' style="display: none"></div>
+        <img src='' id='imgHolder' class="avatar-holder" style="display: none" />
+        <div class="spinner-border" id="headerLoadingSpinner" style="display: none" role="status">
+            <span class="sr-only">Loading...</span>
+        </div>
+    </div>
+    <div class="gmail-body">
+        <!-- Nav tabs -->
+        <ul class="nav nav-tabs" role="tablist">
+            <li role="presentation" class="active"><a href="#spamDetection" aria-controls="spamDetection" role="tab" data-toggle="tab">Spam Detection</a></li>
+            <li role="presentation"><a href="#blockedEmails" aria-controls="blockedEmails" role="tab" data-toggle="tab">Blocked Emails</a></li>
+        </ul>
+
+        <!-- Tab panes -->
+        <div class="tab-content">
+            <div role="tabpanel" class="tab-pane active" id="spamDetection">
+                <div id="tableWrapper" style="display: none">
+                    <table id="tblSpams" class="table">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Sender Email</th>
+                                <th>Total Emails Sent</th>
+                                <th>Total Spams</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodySpams">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="spinner-border" id="tableLoadingSpinner" style="display: none" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+            </div>
+            <div role="tabpanel" class="tab-pane" id="blockedEmails">
+                <div id="blockedWrapper" style="display: none">
+                    <table id="tblBlocked" class="table">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Email Address</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyBlocked">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="spinner-border" id="blockedLoadingSpinner" style="display: none" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<iframe name='myIFrame' id="myIFrame" style='display:none'></iframe>
+
+<!-- Modal -->
+<div class="modal fade" id="viewSpamModal" tabindex="-1" role="dialog" aria-labelledby="viewSpamModal" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewSpamModal">Spam Detail</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="h2" id="emailPlaceholder"></div>
+                <table id="tblSpamDetail" class="table" style="width: 100%">
+                    <thead>
+                        <tr>
+                            <th>No.</th>
+                            <th>Content</th>
+                            <th>Spam Probability</th>
+                            <th>Spam Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodySpamDetail">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts{
+    <script>
+        var OAUTHURL = 'https://accounts.google.com/o/oauth2/auth?';
+        var VALIDURL = 'https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=';
+        var SCOPE = 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify https://mail.google.com/ https://www.googleapis.com/auth/gmail.addons.current.message.readonly https://www.googleapis.com/auth/gmail.addons.current.message.action https://www.googleapis.com/auth/gmail.settings.basic';
+        var CLIENTID = '671031164545-sgurarucpbr2gvncf32h6sr800f6hk2t.apps.googleusercontent.com';
+        var REDIRECT = 'https://localhost:44316/Home/Gmail/'
+        var TYPE = 'token';
+        var _url = OAUTHURL + 'scope=' + SCOPE + '&client_id=' + CLIENTID + '&redirect_uri=' + REDIRECT + '&response_type=' + TYPE;
+
+        var spamData = [];
+
+        const gmailTokenCookie = getGmailTokenInCookie();
+        if (gmailTokenCookie == null) {
+            $('#logInScreen').css('display', 'block');
+            $('#mainScreen').css('display', 'none');
+        } else {
+            console.log(gmailTokenCookie);
+            validateToken(gmailTokenCookie);
+        }
+
+        function getGmailTokenInCookie() {
+            const gmailTokenCookie = document.cookie.split('; ').find(row => row.startsWith('gmailAccessToken'));
+            return gmailTokenCookie == null ? null : gmailTokenCookie.split('=')[1];
+        }
+
+        function login() {
+            var win = window.open(_url, "windowname1", 'width=800, height=600');
+
+            var pollTimer = window.setInterval(function () {
+                try {
+                    console.log(win.document.URL);
+                    if (win.document.URL.indexOf(REDIRECT) != -1) {
+                        window.clearInterval(pollTimer);
+                        var url = win.document.URL;
+                        const acToken = gup(url, 'access_token');
+                        const tokenType = gup(url, 'token_type');
+                        const expiresIn = gup(url, 'expires_in');
+                        win.close();
+
+                        document.cookie = `gmailAccessToken=${acToken}; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+                        validateToken(acToken);
+                    }
+                } catch (e) {
+                }
+            }, 100);
+        }
+
+        async function validateToken(token) {
+            $.ajax({
+                url: VALIDURL + token,
+                data: null,
+                success: function (responseText) {
+                    $('#logInScreen').css('display', 'none');
+                    $('#mainScreen').css('display', 'block');
+                    getUserInfo(token);
+                    getSpamInfo(token);
+                    getBlockedInfo(token);
+                },
+                dataType: "jsonp"
+            });
+        }
+
+        function gup(url, name) {
+            name = name.replace(/[[]/, "\[").replace(/[]]/, "\]");
+            var regexS = "[\?&#]" + name + "=([^&#]*)";
+            var regex = new RegExp(regexS);
+            var results = regex.exec(url);
+            if (results == null)
+                return "";
+            else
+                return results[1];
+        }
+
+        function getUserInfo(token) {
+            $('#headerLoadingSpinner').css('display', 'block');
+            $('.gmail-header > *:not(#headerLoadingSpinner)').css('display', 'none');
+
+            fetch('https://www.googleapis.com/oauth2/v1/userinfo?access_token=' + token)
+                .then(response => response.json())
+                .then(user => {
+                    $('#uName').text('Welcome, ' + user.name);
+                    $('#imgHolder').attr('src', user.picture);
+                    $('#headerLoadingSpinner').css('display', 'none');
+                    $('.gmail-header > *:not(#headerLoadingSpinner)').css('display', 'block');
+
+                    document.cookie = `gmailUserId=${user.id}; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+                });
+        }
+
+        async function getSpamInfo(token) {
+            $('#tableLoadingSpinner').css('display', 'block');
+            $('#tableWrapper').css('display', 'none');
+            let nextToken = '';
+            const limit = 5;
+            let allMessagesData = [];
+            let temp;
+            let iteration = 0;
+            do {
+                iteration += 1;
+                temp = await getMessages(token, nextToken);
+                console.log(temp);
+                //allMessages = [...allMessages, ...temp.messages];
+                nextToken = temp.nextPageToken;
+                Promise.all(temp.messages.map(item => {
+                    return fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${item.id}?access_token=${token}`).then(response => response.json())
+                }))
+                    .then(data => {
+                        const messageData = _.map(data, item => {
+                            return {
+                                Id: item.id,
+                                From: _.get(_.find(item.payload.headers, h => h.name === 'From'), 'value'),
+                                Parts: item.payload.mimeType === 'text/plain' ? [{ Data: item.payload.body.data }] :
+                                    _(item.payload.parts)
+                                        .filter(p => p.mimeType === 'text/plain')
+                                        .map(p => ({
+                                            Data: p.body.data
+                                        }))
+                                        .value(),
+                            }
+                        });
+                        allMessagesData = [...allMessagesData, ...messageData];
+                    });
+            } while (iteration < limit || !_.isNil(nextToken));
+
+            console.log(111, allMessagesData);
+
+
+            fetch('/Home/CheckEmailSpam', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(allMessagesData),
+            })
+                .then(response => response.json())
+                .then(result => {
+                    spamData = result.result;
+                    console.log('result', result);
+                    generateSpamTable(result.result);
+                    $('#tblSpams').DataTable();
+                    $('#tableLoadingSpinner').css('display', 'none');
+                    $('#tableWrapper').css('display', 'block');
+                });
+        }
+
+        function getBlockedInfo(token) {
+            $('#blockedLoadingSpinner').css('display', 'block');
+            $('#blockedWrapper').css('display', 'none');
+
+            fetch(`https://www.googleapis.com/gmail/v1/users/me/settings/filters?access_token=${token}`)
+                .then(response => response.json())
+                .then(result => {
+                    blockedData = result.filter;
+                    console.log('blocked result', result);
+                    generateBlockedTable(result.filter);
+                    $('#tblBlocked').DataTable();
+                    $('#blockedLoadingSpinner').css('display', 'none');
+                    $('#blockedWrapper').css('display', 'block');
+                })
+                .catch(error => {
+                    console.log('error', error);
+                    $('#blockedLoadingSpinner').css('display', 'none');
+                    $('#blockedWrapper').css('display', 'block');
+                });
+        }
+
+        function startLogoutPolling() {
+            $('#logInScreen').css('display', 'block');
+            $('#mainScreen').css('display', 'none');
+            //loggedIn = false;
+            $('#uName').text('');
+            $('#imgHolder').attr('src', 'none.jpg');
+            document.cookie = "gmailAccessToken= ; expires = Thu, 01 Jan 1970 00:00:00 GMT"
+        }
+
+        function generateSpamTable(data) {
+            const tbodyHtml = _.chain(data)
+                .orderBy(['totalSpam'], ['desc'])
+                .map((row, index) => {
+                    var html = '';
+                    html += '<tr>';
+                    html += `<td>${index + 1}</td>`;
+                    html += `<td>${row.senderEmail}</td>`;
+                    html += `<td>${row.totalSentEmail}</td>`;
+                    html += `<td>${row.totalSpam}</td>`;
+                    html += '<td class="table-col-action">';
+                    html += `<button class='btn btn-primary btn-show-all' data-email='${row.senderEmail}'>Show all spams</button>`;
+                    html += `<button class='btn btn-danger btn-block-email' data-email='${row.senderEmail}'>Block this email</button>`;
+                    html += '</td>';
+                    html += '</tr>';
+                    return html;
+                })
+                .reduce((result, value) => result + value, '')
+                .value();
+            $('#tbodySpams').html(tbodyHtml);
+        }
+
+        function generateBlockedTable(data) {
+            const tbodyHtml = _.chain(data)
+                .filter(item => {
+                    return _.find(item.action.addLabelIds, 'TRASH') !== null && _.find(item.action.removeLabelIds, 'INBOX') !== null;
+                })
+                .map((row, index) => {
+                    var html = '';
+                    html += '<tr>';
+                    html += `<td>${index + 1}</td>`;
+                    html += `<td>${row.criteria.from}</td>`;
+                    html += '<td class="table-col-action">';
+                    html += `<button class='btn btn-danger btn-unblock' data-filterId='${row.id}'>Unblock</button>`;
+                    html += '</td>';
+                    html += '</tr>';
+                    return html;
+                })
+                .reduce((result, value) => result + value, '')
+                .value();
+            $('#tbodyBlocked').html(tbodyHtml);
+        }
+
+        function generateSpamDetailTable(data) {
+            const tbodyHtml = _.chain(data)
+                .orderBy(['prediction.probability'], ['desc'])
+                .map((row, index) => {
+                    var html = '';
+                    html += '<tr>';
+                    html += `<td>${index + 1}</td>`;
+                    html += `<td>${row.content}</td>`;
+                    html += `<td>${row.prediction.probability}</td>`;
+                    html += `<td>${row.prediction.score}</td>`;
+                    html += '</tr>';
+                    return html;
+                })
+                .reduce((result, value) => result + value, '')
+                .value();
+            $('#tbodySpamDetail').html(tbodyHtml);
+        }
+
+        function getMessages(token, nextPageToken) {
+            if (nextPageToken === '') {
+                return fetch(`https://www.googleapis.com/gmail/v1/users/me/messages?access_token=${token}`)
+                    .then(response => response.json());
+            } else {
+                return fetch(`https://www.googleapis.com/gmail/v1/users/me/messages?access_token=${token}&pageToken=${nextPageToken}`)
+                    .then(response => response.json());
+            }
+        }
+
+        $(document).ready(function () {
+            $('#btnLogIn').click(function () {
+                login();
+            });
+
+            $(document).on('click', '.btn-show-all', function () {
+                const data = _.find(spamData, item => item.senderEmail === $(this).attr('data-email'));
+                console.log(data);
+                generateSpamDetailTable(data.spams);
+                $('#emailPlaceholder').text(data.senderEmail);
+                $('#viewSpamModal').modal('toggle');
+                $('#tblSpamDetail').DataTable();
+            });
+
+            $(document).on('click', '.btn-block-email', function () {
+                const emailAddress = $(this).attr('data-email');
+                const gmailToken = getGmailTokenInCookie();
+                if (gmailToken === null) {
+                    return;
+                }
+                console.log(emailAddress);
+                const filter = {
+                    criteria: {
+                        from: emailAddress,
+                    },
+                    action: {
+                        addLabelIds: ['TRASH'],
+                        removeLabelIds: ['INBOX'],
+                    },
+                };
+                fetch(`https://www.googleapis.com/gmail/v1/users/me/settings/filters?access_token=${gmailToken}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json; charset=utf-8',
+                    },
+                    body: JSON.stringify(filter)
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('success');
+                        getBlockedInfo(gmailToken);
+                    });
+            });
+
+            $(document).on('click', '.btn-unblock', function () {
+                const filterId = $(this).attr('data-filterId');
+                const gmailToken = getGmailTokenInCookie();
+                if (gmailToken === null) {
+                    return;
+                }
+                console.log(filterId);
+                fetch(`https://www.googleapis.com/gmail/v1/users/me/settings/filters/${filterId}?access_token=${gmailToken}`, {
+                    method: 'DELETE',
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('success');
+                        getBlockedInfo(gmailToken);
+                    });
+            });
+        });
+    </script>
+}
+
