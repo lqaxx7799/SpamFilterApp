@@ -223,7 +223,7 @@
                         });
                         allMessagesData = [...allMessagesData, ...messageData];
                     });
-            } while (iteration < limit || !_.isNil(nextToken));
+            } while (iteration < limit && !_.isNil(nextToken));
 
             console.log(111, allMessagesData);
 
